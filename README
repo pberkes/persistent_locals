@@ -38,7 +38,7 @@ def is_sum_lt_prod(a,b,c, internals=False):
          return sum<prod
 
 Returning a dictionary is important here in order to avoid breaking
-the code at later stages, should one want to acces even more local
+the code at later stages, should one want to access even more local
 variables, and also in order to avoid ugly code like
 
 res, _, _, _, var1, _, var3 = f(x)
@@ -110,7 +110,7 @@ Solution 1 (persistent_locals)
 ------------------------------
 
 The first proposed approach is to wrap the function in a callable
-object, and modifie its bytecode by adding an external try...finally
+object, and modify its bytecode by adding an external try...finally
 statement as follows:
 
    def f(self, *args, **kwargs):
