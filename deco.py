@@ -113,7 +113,7 @@ class PersistentLocalsFunction(object):
         docprefix = func.func_name + signature
         docpostfix = """
         
-This function has been decorated with the 'persistent_locals2'
+This function has been decorated with the 'persistent_locals'
 decorator. You can access the dictionary of the variables in the inner
 scope of the function via the 'locals' attribute.
 
