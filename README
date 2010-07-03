@@ -1,6 +1,6 @@
-This library defines a new decorator, 'persistent_locals' that exposes
-the local variables in the inner scope of a function through a
-function attribute, 'locals'.
+This library defines two new decorator, 'persistent_locals' and
+'persistent_locals2' that expose the local variables in the inner
+scope of a function through a function attribute, 'locals'.
 
 The problem
 ===========
@@ -26,62 +26,92 @@ order to write more comprehensive tests for the algorithm.
 
 A possible solution would be to re-define the function and return the
 needed internal variables, but this would break the existing code. A
-better solution would be to add a keyword argument to return more
+better solution is to add a keyword argument to return more
 information:
 
 def is_sum_lt_prod(a,b,c, internals=False):
     sum = a+b+c
     prod = a*b*c
     if internals:
-         return sum<prod, sum, prod
+         return sum<prod, {'sum': sum, 'prod': prod}
     else:
          return sum<prod
 
-This would keep the existing code intact, but only moves the problem
-to later stages of the development. If successively the developer
-needs access to even more local variables, the code has to be modified
-again, and part of the code is broken. Moreover, this style leads to
-ugly code like
+Returning a dictionary is important here in order to avoid breaking
+the code at later stages, should one want to acces even more local
+variables, and also in order to avoid ugly code like
 
 res, _, _, _, var1, _, var3 = f(x)
 
 where most of the returned values are irrelevant.
 
+This solution would keep the existing code intact, but requires
+frequent rewriting of the source code, which might not be feasible
+(e.g., if the function is defined in a third-party library). Moreover,
+the local variables are not accessible in case the function raises an
+exception, which is often desirable for debugging.
+
 Proposed solution
-=============
+=================
 
 The proposed solution consists in a decorator that makes the local
-variables accessible from a function attribute, 'locals'. For example:
+variables accessible from a read-only property of the function,
+'locals'. For example:
 
-@persistent_locals
-def is_sum_lt_prod(a,b,c):
-    sum = a+b+c
-    prod = a*b*c
-    return sum<prod
+    @persistent_locals
+    def is_sum_lt_prod(a,b,c):
+        sum = a+b+c
+        prod = a*b*c
+        return sum<prod
 
-after calling the function, e.g. is_sum_lt_prod(2,1,2), which returns
-False, we can analyze the intermediate results as
-is_sum_lt_prod.locals
--> {'a': 2, 'b': 1, 'c': 2, 'prod': 4, 'sum': 5}
+after calling the function, e.g. is_sum_lt_prod(2,1,2), we can analyze
+the intermediate results as
+
+    is_sum_lt_prod.locals
+
+which returns
+
+    {'a': 2, 'b': 1, 'c': 2, 'prod': 4, 'sum': 5}
 
 This style is cleaner, is consistent with the principle of identifying
 the value returned by a function as the output of an algorithm, and is
 robust to changes in the needs of the researcher.
 
-Note that the local variables are saved even in case of an exception,
-which turns out to be quite useful for debugging.
+The local variables are saved even in case of an exception, which
+turns out to be quite useful for debugging.
 
 How it works
-=========
+============
 
-The local variables in the inner scope of a function are not easily
-accessible. One solution (which I have not tried) may be to use
-tracing code like the one used in a debugger. This, however, would
-have a considerable cost in time.
+Unfortunately, the local variables in the inner scope of a function
+are not easily accessible. Moreover, a candidate decorator should not
+break under these conditions:
 
-The proposed approach is to wrap the function in a callable object,
-and modifie its bytecode by adding an external try...finally statement
-as follows:
+1) When the function to be decorated is defined in a closure
+
+2) When the original function is deleted, as in
+    @persistent_locals
+    def f():
+        pass
+    
+    g=f
+    del f
+
+1 and 2 imply that the decorator cannot refer to the global name of the
+function
+
+3) When the function raises an exception (it should return the locals
+   computed up to the point the exception was raised)
+
+4) When the function is defined using an '*args' argument (i.e., the
+   decorator cannot add a keyword argument)
+
+Solution 1 (persistent_locals)
+------------------------------
+
+The first proposed approach is to wrap the function in a callable
+object, and modifie its bytecode by adding an external try...finally
+statement as follows:
 
    def f(self, *args, **kwargs):
        try:
@@ -90,37 +120,54 @@ as follows:
            self.locals = locals().copy()
            del self.locals['self']
 
-The implementation can be found in the attached deco.zip (it requires
-the lightweight library byteplay.py,
-http://code.google.com/p/byteplay/).
+The implementation requires the lightweight library byteplay.py
+(http://code.google.com/p/byteplay/).
 
 The reason for wrapping the function in a class, instead of saving the
 locals in a function attribute directly, is that there are all sorts
-of complications in referring to itself from within a function. For
-example, referring to the attribute as f.locals results in the
-bytecode looking for the name 'f' in the namespace, and therefore
+of complications in referring from within a function to the function
+itself. For example, referring to the attribute as f.locals results in
+the bytecode looking for the name 'f' in the namespace, and therefore
 moving the function, e.g. with
 g = f
 del f
 would break 'g'. There are even more problems for functions defined in
 a closure.
 
-I tried modfying f.func_globals with a custom dictionary which keeps a
-reference to f.func_globals, adding a static element to 'f', but this
-does not work as the Python interpreter does not call the func_globals
-dictionary with Python calls but directly with PyDict_GetItem (see
-http://osdir.com/ml/python.ideas/2007-11/msg00092.html). It is thus
-impossible to re-define __getitem__ to return 'f' as needed. Ideally,
-one would like to define a new closure for the function with a cell
-variable containing the reference, but this is impossible at present.
+Solution 2 (persistent_locals2)
+-------------------------------
 
-An alternative solution (see persitent_locals_with_kwarg in deco.py)
-is to change the signature of the function with an additional keyword
-argument f(arg1, arg2, _self_ref=f). However, this approach breaks
-functions that define an *args argument.
+A simpler and arguably cleaner solution is to define a tracer function
+and use it to trace the code with 'sys.setprofile'. 'setprofile' is
+called at the entry and exit of functions and when an exception is
+called, and gives access to the frame of the function:
+
+    def __call__(self, *args, **kwargs):
+        def tracer(frame, event, arg):
+            if event=='return':
+                self._locals = frame.f_locals
+                
+        # tracer is activated on next call, return or exception
+        sys.setprofile(tracer)
+        try:
+            # trace the function call
+            res = self.func(*args, **kwargs)
+        finally:
+            # disable tracer
+            sys.setprofile(None)
+        return res
+
+Calling the tracer function at the entry and exit of functions comes
+at a cost in execution time. This cost is usually very small, but
+might become significant if the function makes many calls to other
+functions.
+
+Moreover, this second solution breaks any attempt to profile the
+decorated code.
 
 Cost
-===
+====
+
 The increase in execution time of the decorated function is minimal.
 Given its domain of application, most of the functions will take a
 significant amount of time to complete, making the cost the decoration
@@ -132,14 +179,31 @@ def f(x):
    return 2*x
 
 df = deco.persistent_locals(f)
+df2 = deco.persistent_locals2(f)
 
 %timeit f(1)
-10 loops, best of 3: 501 ms per loop
+10 loops, best of 3: 500 ms per loop
 %timeit df(1)
-10 loops, best of 3: 502 ms per loop
+10 loops, best of 3: 500 ms per loop
+%timeit df2(1)
+10 loops, best of 3: 500 ms per loop
+
+This does not work
+==================
+
+I tried modifying f.func_globals with a custom dictionary which keeps
+a reference to f.func_globals, adding a static element to 'f', but
+this does not work as the Python interpreter does not call the
+func_globals dictionary with Python calls but directly with
+PyDict_GetItem (see
+http://osdir.com/ml/python.ideas/2007-11/msg00092.html). It is thus
+impossible to re-define __getitem__ to return 'f' as needed. Ideally,
+one would like to define a new closure for the function with a cell
+variable containing the reference, but this is impossible as far as I
+can tell.
 
 Conclusion
-========
+==========
 
 The problem of needing to access a different subset of intermediate
 results in an algorithm is a recurrent one in my research. The use of

@@ -1,6 +1,8 @@
 import unittest
 import deco
 
+class _TestException(Exception):
+    pass
 
 @deco.persistent_locals
 def _globalfunc(x):
@@ -61,6 +63,30 @@ class TestPersistLocals(unittest.TestCase):
         self.assertEqual(args, (3,4))
         self.assertEqual(f.locals['x'], 2)
         self.assertEqual(f.locals['args'], (3,4))
+
+    def test_exception(self):
+        @deco.persistent_locals
+        def f(x):
+            y = 3
+            raise _TestException
+            z = 4 # this local variable is never initialized
+
+        self.assertRaises(_TestException, f, 0)
+        self.assertEqual(f.locals, {'x': 0, 'y': 3})
+
+    def test_late_return(self):
+        def g(a):
+            return a
+        
+        @deco.persistent_locals
+        def f(x):
+            try:
+                return x
+            finally:
+                g(1)
+                
+        f(0)
+        self.assertEqual(f.locals, {'x': 0, 'g': g})
 
 if __name__ == '__main__':
     unittest.main()
