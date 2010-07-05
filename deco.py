@@ -3,6 +3,7 @@ import byteplay as bp
 import inspect
 import sys
 
+# persistent_locals2 has been co-authored with Andrea Maffezzoli
 class persistent_locals2(object):
     """Function decorator to expose local variables after execution.
 

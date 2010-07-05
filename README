@@ -137,7 +137,8 @@ a closure.
 Solution 2 (persistent_locals2)
 -------------------------------
 
-A simpler and arguably cleaner solution is to define a tracer function
+This second solution is based on an idea by Andrea Maffezzoli: A
+simpler and arguably cleaner approach is to define a tracer function
 and use it to trace the code with 'sys.setprofile'. 'setprofile' is
 called at the entry and exit of functions and when an exception is
 called, and gives access to the frame of the function:
@@ -159,8 +160,8 @@ called, and gives access to the frame of the function:
 
 Calling the tracer function at the entry and exit of functions comes
 at a cost in execution time. This cost is usually very small, but
-might become significant if the function makes many calls to other
-functions.
+might become significant if the decorator function makes many calls to
+other functions.
 
 Moreover, this second solution breaks any attempt to profile the
 decorated code.
