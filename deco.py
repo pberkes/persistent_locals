@@ -111,17 +111,17 @@ class persistent_locals2(object):
     This decorator does not play nice with profilers, and will cause
     them to not be able to assign execution time to functions.
     """
-    
+
     def __init__(self, func):
         self._locals = {}
         self.func = func
-        
+
     def __call__(self, *args, **kwargs):
-        
+
         def tracer(frame, event, arg):
             if event=='return':
-                self._locals = frame.f_locals
-                
+                self._locals = frame.f_locals.copy()
+
         # tracer is activated on next call, return or exception
         sys.setprofile(tracer)
         try:
