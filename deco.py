@@ -3,41 +3,6 @@ import byteplay as bp
 import inspect
 import sys
 
-# persistent_locals2 has been co-authored with Andrea Maffezzoli
-class persistent_locals2(object):
-    """Function decorator to expose local variables after execution.
-
-    Modify the function such that, at the exit of the function
-    (regular exit or exceptions), the local dictionary is copied to a
-    function attribute 'locals'.
-    """
-    
-    def __init__(self, func):
-        self._locals = {}
-        self.func = func
-        
-    def __call__(self, *args, **kwargs):
-        def tracer(frame, event, arg):
-            if event=='return':
-                self._locals = frame.f_locals
-                
-        # tracer is activated on next call, return or exception
-        sys.setprofile(tracer)
-        try:
-            # trace the function call
-            res = self.func(*args, **kwargs)
-        finally:
-            # disable tracer
-            sys.setprofile(None)
-        return res
-
-    def clear_locals(self):
-        self._locals = {}
-
-    @property
-    def locals(self):
-        return self._locals
-
 def persistent_locals(f):
     """Function decorator to expose local variables after execution.
 
@@ -60,7 +25,7 @@ def persistent_locals(f):
     # ### disassemble f
     f_code = bp.Code.from_code(f.func_code)
 
-    # ### add try...finally statement around code
+    # ### use bytecode injection to add try...finally statement around code
     finally_label = bp.Label()
     # try:
     code_before = (bp.SETUP_FINALLY, finally_label)
@@ -94,11 +59,21 @@ def persistent_locals(f):
     return  PersistentLocalsFunction(func)
 
 
-class PersistentLocalsFunction(object):
-    """Wrapper class for 'persistent_locals' decorator.
+_docpostfix = """
+        
+This function has been decorated with the 'persistent_locals'
+decorator. You can access the dictionary of the variables in the inner
+scope of the function via the 'locals' attribute.
 
-    See the __doc__ attribute of the instances for help about
-    the wrapped function.
+For more information about the original function, query the self._func
+attribute.
+"""
+        
+class PersistentLocalsFunction(object):
+    """Wrapper class for the 'persistent_locals' decorator.
+
+    Refer to the docstring of instances for help about the wrapped
+    function.
     """
     def __init__(self, func):
         self._locals = {}
@@ -112,22 +87,54 @@ class PersistentLocalsFunction(object):
         signature = inspect.formatargspec(*signature)
         
         docprefix = func.func_name + signature
-        docpostfix = """
         
-This function has been decorated with the 'persistent_locals'
-decorator. You can access the dictionary of the variables in the inner
-scope of the function via the 'locals' attribute.
-
-For more information about the original function, query the self._func
-attribute.
-        """
         default_doc = '<no docstring>'
         self.__doc__ = (docprefix + '\n\n' + (func.__doc__ or default_doc)
-                        + docpostfix)
+                        + _docpostfix)
         
     def __call__(self, *args, **kwargs):
         return self._func(*args, **kwargs)
     
+    @property
+    def locals(self):
+        return self._locals
+
+
+# persistent_locals2 has been co-authored with Andrea Maffezzoli
+class persistent_locals2(object):
+    """Function decorator to expose local variables after execution.
+
+    Modify the function such that, at the exit of the function
+    (regular exit or exceptions), the local dictionary is copied to a
+    function attribute 'locals'.
+
+    This decorator does not play nice with profilers, and will cause
+    them to not be able to assign execution time to functions.
+    """
+    
+    def __init__(self, func):
+        self._locals = {}
+        self.func = func
+        
+    def __call__(self, *args, **kwargs):
+        
+        def tracer(frame, event, arg):
+            if event=='return':
+                self._locals = frame.f_locals
+                
+        # tracer is activated on next call, return or exception
+        sys.setprofile(tracer)
+        try:
+            # trace the function call
+            res = self.func(*args, **kwargs)
+        finally:
+            # disable tracer and replace with old one
+            sys.setprofile(None)
+        return res
+
+    def clear_locals(self):
+        self._locals = {}
+
     @property
     def locals(self):
         return self._locals

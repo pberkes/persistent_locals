@@ -139,9 +139,9 @@ Solution 2 (persistent_locals2)
 
 This second solution is based on an idea by Andrea Maffezzoli: A
 simpler and arguably cleaner approach is to define a tracer function
-and use it to trace the code with 'sys.setprofile'. 'setprofile' is
-called at the entry and exit of functions and when an exception is
-called, and gives access to the frame of the function:
+and use it to trace the code with 'sys.setprofile'. The tracer
+function is called at the entry and exit of functions and when an
+exception is called, and gives access to the frame of the function:
 
     def __call__(self, *args, **kwargs):
         def tracer(frame, event, arg):
